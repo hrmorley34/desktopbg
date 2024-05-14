@@ -1,9 +1,10 @@
 [package]
 name = "desktopbg"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
+dunce = "1.0.4"
 rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 toml = { version = "0.8", features = ["preserve_order"] }
