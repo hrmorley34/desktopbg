@@ -31,9 +31,17 @@ backgrounds = { Common = 9, Rare = 1 }
 
 Run
 ```sh
-cargo run -- /path/to/bgdir/
+cargo run -- setwallpaper /path/to/bgdir/
 ```
-to randomise the background from those in `bgdir`.
+to randomise the background from those in `bgdir`, as specified in `bgdir/desktopbg.toml`.
+
+### Lockscreen (Windows only)
+
+On Windows, you can enable the `lockscreen` feature to change the lockscreen background.
+```sh
+cargo run --features lockscreen -- setlockscreen /path/to/bgdir/
+```
+This reads from `bgdir/lockscreenbg.toml`.
 
 ## Windows automation
 
@@ -65,6 +73,6 @@ In Task Scheduler, you can create a task to run the program on login/unlock.
 
     - Program/script: `C:\path\to\desktopbg.exe`
 
-      I use `C:\path\to\Git\desktopbg\target\release\desktopbg.exe`.
+      I use `C:\path\to\desktopbg\target\release\desktopbg.exe`.
     
-    - Add arguments: `C:\path\to\bgdir`
+    - Add arguments: `setwallpaper "C:\path\to\bgdir"`
