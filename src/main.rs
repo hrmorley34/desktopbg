@@ -16,6 +16,11 @@ mod lockscreen;
 #[cfg(feature = "lockscreen")]
 use crate::lockscreen::set_lock_screen;
 
+#[cfg(feature = "display")]
+mod display;
+#[cfg(feature = "display")]
+use crate::display::DisplayManager;
+
 fn display_path(path: &Path) -> String {
     path.display().to_string()
 }
@@ -106,6 +111,12 @@ fn print_help(execname: &str) -> () {
         println!("  {execname} setlockscreen PATH");
         println!("    Set the lockscreen background from PATH");
     }
+
+    #[cfg(feature = "display")]
+    {
+        println!("  {execname} setwallpapermulti PATH");
+        println!("    Set the desktop background from PATH individually on each monitor");
+    }
 }
 
 enum Command<'a> {
@@ -115,6 +126,9 @@ enum Command<'a> {
 
     #[cfg(feature = "lockscreen")]
     SetLockscreen(&'a str),
+
+    #[cfg(feature = "display")]
+    SetWallpaperMulti(&'a str),
 }
 
 fn main() -> ExitCode {
@@ -136,6 +150,11 @@ fn main() -> ExitCode {
             ["setlockscreen", path] => Command::SetLockscreen(path),
             #[cfg(feature = "lockscreen")]
             ["setlockscreen"] => Command::BadArguments, // prevent matching path only
+
+            #[cfg(feature = "display")]
+            ["setwallpapermulti", path] => Command::SetWallpaperMulti(path),
+            #[cfg(feature = "display")]
+            ["setwallpapermulti"] => Command::BadArguments, // prevent matching path only
 
             [path] => Command::SetWallpaper(path), // compatability with old format
             [..] => Command::BadArguments,
@@ -229,6 +248,49 @@ fn main() -> ExitCode {
                 println!("New: {}", display_short_path(&new, &bgdir));
             }
 
+            ExitCode::SUCCESS
+        }
+
+        #[cfg(feature = "display")]
+        Command::SetWallpaperMulti(bgdir) => {
+            let bgdir = match canonicalize(PathBuf::from(bgdir)) {
+                Err(err) => {
+                    eprintln!("Cannot find directory '{}': {}", bgdir, err);
+                    return ExitCode::FAILURE;
+                }
+                Ok(p) => p,
+            };
+
+            let buckets: Vec<Bucket> = match get_buckets_from_dir(&bgdir, DESKTOPBG) {
+                Err(err) => {
+                    eprintln!("{err}");
+                    return ExitCode::FAILURE;
+                }
+                Ok(b) => b,
+            };
+
+            let dm = match DisplayManager::create() {
+                Ok(dm) => dm,
+                Err(_) => {
+                    eprintln!("Failed to get DisplayManager.");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let displays = match dm.get_all_monitors() {
+                Ok(displays) => displays,
+                Err(_) => {
+                    eprintln!("Failed to get monitors.");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            for (i, monitor_id) in displays.iter() {
+                let path = bucket_random(&buckets, &|_| true).expect("Failed to select image.");
+                dm.set_wallpaper(monitor_id, &path)
+                    .expect("Failed to set wallpaper.");
+                eprintln!("Set monitor {}", i + 1);
+            }
             ExitCode::SUCCESS
         }
     }
