@@ -1,6 +1,11 @@
+use dunce::canonicalize;
 use rand::Rng;
+use serde::Deserialize;
+use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+use crate::utils::display_path;
 
 static IMAGE_EXTS: [&str; 3] = ["png", "jpg", "jpeg"];
 
@@ -71,4 +76,52 @@ pub fn weighted_random<'b>(
 
 pub fn bucket_random(buckets: &[Bucket], predicate: &PathPredicate) -> Result<PathBuf, ()> {
     weighted_random(buckets, predicate)?.get_random(predicate)
+}
+
+#[derive(Deserialize)]
+pub struct BucketsFile {
+    backgrounds: toml::Table,
+}
+
+#[allow(dead_code)]
+pub const DESKTOPBG: &str = "desktopbg.toml";
+#[allow(dead_code)]
+pub const LOCKSCREENBG: &str = "lockscreenbg.toml";
+
+pub fn get_buckets_from_dir(bgdir: &PathBuf, toml: &str) -> Result<Vec<Bucket>, String> {
+    let bucketsfile = bgdir.join(toml);
+    if !bucketsfile.exists() {
+        return Err(format!(
+            "Cannot find bucketsfile! Looking for: {}",
+            display_path(&bucketsfile)
+        ));
+    }
+    let contents =
+        fs::read_to_string(bucketsfile).map_err(|err| format!("Cannot open bucketsfile: {err}"))?;
+    let bucketsfile: BucketsFile =
+        toml::from_str(&contents).map_err(|err| format!("Cannot parse bucketsfile: {err}"))?;
+
+    Ok(bucketsfile
+        .backgrounds
+        .iter()
+        .filter_map(|(dirname, weight)| {
+            // `canonicalize` guarantees existence and corrects capitalisation
+            let path = canonicalize(bgdir.join(dirname))
+                .or_else(|err| {
+                    eprintln!("Cannot find bucket {dirname}: {err}. Skipping...");
+                    Err(err)
+                })
+                .ok()?;
+            let weight = weight.as_integer().or_else(|| {
+                eprintln!("Non-integer weight {weight} for {dirname}. Skipping...");
+                None
+            })?;
+            if weight <= 0 {
+                eprintln!("Non-positive weight {weight} for {dirname}. Skipping...");
+                None
+            } else {
+                Some(Bucket { path, weight })
+            }
+        })
+        .collect())
 }
