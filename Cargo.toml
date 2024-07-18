@@ -24,4 +24,9 @@ lockscreen = [
     "windows/Foundation",
     "windows/Storage",
 ]
-display = ["dep:windows", "windows/Win32_UI_Shell", "windows/Win32_System_Com"]
+display = [
+    "dep:windows",
+    "windows/Win32_UI_Shell",
+    "windows/Win32_System_Com",
+    "windows/Win32_Foundation",
+]

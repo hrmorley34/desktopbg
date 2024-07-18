@@ -1,8 +1,9 @@
+use std::option::Option;
 use std::path::{Path, PathBuf};
 use std::result;
 use windows::{
     core::{Result, HSTRING, PCWSTR, PWSTR},
-    Win32::{System::Com, UI::Shell},
+    Win32::{Foundation, System::Com, UI::Shell},
 };
 
 use crate::bucket::{bucket_random, Bucket};
@@ -11,6 +12,28 @@ use crate::wallpaper::set_wallpaper_from_buckets;
 
 pub struct MonitorID {
     monitor_id: PCWSTR,
+}
+
+pub struct MonitorInfo {
+    index: u32,
+    monitor_id: MonitorID,
+    rect: Option<Foundation::RECT>,
+}
+
+impl MonitorInfo {
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+    pub fn monitor_id(&self) -> &MonitorID {
+        &self.monitor_id
+    }
+    #[allow(dead_code)]
+    pub fn rect(&self) -> Option<Foundation::RECT> {
+        self.rect
+    }
+    pub fn is_connected(&self) -> bool {
+        self.rect.is_some()
+    }
 }
 
 pub struct DisplayManager {
@@ -25,14 +48,38 @@ impl DisplayManager {
         Ok(DisplayManager { wallpaper })
     }
 
-    pub fn get_monitor_device_path_count(&self) -> Result<u32> {
+    fn get_monitor_device_path_count(&self) -> Result<u32> {
         unsafe { self.wallpaper.GetMonitorDevicePathCount() }
     }
 
-    pub fn get_monitor_device_path_at(&self, monitorindex: u32) -> Result<MonitorID> {
+    fn get_monitor_device_path_at(&self, monitorindex: u32) -> Result<MonitorID> {
         let monitor_id: PWSTR = unsafe { self.wallpaper.GetMonitorDevicePathAt(monitorindex) }?;
         Ok(MonitorID {
             monitor_id: PCWSTR(monitor_id.as_ptr()),
+        })
+    }
+
+    fn get_monitor_rect(&self, monitor_id: &MonitorID) -> Result<Option<Foundation::RECT>> {
+        let rect = unsafe { self.wallpaper.GetMonitorRECT(monitor_id.monitor_id) };
+        rect.map_or_else(
+            |e| {
+                if e.code() == Foundation::S_FALSE {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            },
+            |r| Ok(Some(r)),
+        )
+    }
+
+    fn get_monitor_info(&self, monitorindex: u32) -> Result<MonitorInfo> {
+        let monitor_id = self.get_monitor_device_path_at(monitorindex)?;
+        let rect = self.get_monitor_rect(&monitor_id)?;
+        Ok(MonitorInfo {
+            index: monitorindex,
+            monitor_id,
+            rect,
         })
     }
 
@@ -44,15 +91,15 @@ impl DisplayManager {
         }
     }
 
-    pub fn get_all_monitors(&self) -> Result<Vec<(u32, MonitorID)>> {
+    pub fn get_all_monitors(&self) -> Result<Vec<MonitorInfo>> {
         Ok((0..self.get_monitor_device_path_count()?)
-            .filter_map(|i| self.get_monitor_device_path_at(i).ok().map(|mid| (i, mid)))
+            .filter_map(|i| self.get_monitor_info(i).ok())
             .collect())
     }
 }
 
-pub fn get_displaymanager_variables(
-) -> result::Result<(DisplayManager, Vec<(u32, MonitorID)>), String> {
+pub fn get_displaymanager_variables() -> result::Result<(DisplayManager, Vec<MonitorInfo>), String>
+{
     let dm =
         DisplayManager::create().map_err(|e| format!("Failed to get DisplayManager: {}", e))?;
 
@@ -80,12 +127,21 @@ pub fn set_wallpaper_multi_from_buckets(
                 list_bucket_files(&buckets, &bgdir, &predicate);
             }
 
-            for (i, monitor_id) in displays.iter() {
-                let path =
-                    bucket_random(&buckets, &predicate).map_err(|_| "Failed to select image.")?;
-                dm.set_wallpaper(monitor_id, &path)
-                    .map_err(|e| format!("Failed to set wallpaper on monitor {}: {}", i + 1, e))?;
-                eprintln!("Set monitor {}", i + 1);
+            for monitor in displays.iter() {
+                if monitor.is_connected() {
+                    let path = bucket_random(&buckets, &predicate)
+                        .map_err(|_| "Failed to select image.")?;
+                    dm.set_wallpaper(monitor.monitor_id(), &path).map_err(|e| {
+                        format!(
+                            "Failed to set wallpaper on monitor {}: {}",
+                            monitor.index() + 1,
+                            e
+                        )
+                    })?;
+                    eprintln!("Set monitor {}", monitor.index() + 1);
+                } else {
+                    eprintln!("Skipping disconnected monitor {}", monitor.index() + 1);
+                }
             }
             Ok(())
         },
