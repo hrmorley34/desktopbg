@@ -7,7 +7,7 @@ use windows::{
 };
 
 use crate::bucket::{bucket_random, Bucket};
-use crate::utils::list_bucket_files;
+use crate::utils::{display_short_path, list_bucket_files};
 use crate::wallpaper::set_wallpaper_from_buckets;
 
 pub struct MonitorID {
@@ -138,7 +138,15 @@ pub fn set_wallpaper_multi_from_buckets(
                             e
                         )
                     })?;
-                    eprintln!("Set monitor {}", monitor.index() + 1);
+                    if cfg!(debug_assertions) {
+                        eprintln!(
+                            "Set monitor {}: {}",
+                            monitor.index() + 1,
+                            display_short_path(&path, &bgdir)
+                        );
+                    } else {
+                        eprintln!("Set monitor {}", monitor.index() + 1);
+                    }
                 } else {
                     eprintln!("Skipping disconnected monitor {}", monitor.index() + 1);
                 }
